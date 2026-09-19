@@ -1,0 +1,9 @@
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: ssh.{tudominio}.dpdns.org
+    service: ssh://host.docker.internal:22
+    originRequest:
+      http2Origin: false
+      proxyConnectionTimeout: 30s

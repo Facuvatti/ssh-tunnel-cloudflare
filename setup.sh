@@ -1,4 +1,5 @@
 #!/bin/bash
+FIRST_SIGINT=0
 cleanup() {
     echo ""
     if [ "$FIRST_SIGINT" -eq 0 ]; then
@@ -10,7 +11,6 @@ cleanup() {
             read -p "Do you want to stop them now? (y/n): " STOP_COMPOSE
             if [ "$STOP_COMPOSE" == "y" ]; then
                 echo "Stopping Docker Compose services..."
-                cd ./docker
                 docker compose down
             else
                 echo "ℹ️  Docker Compose services were left running."
@@ -125,7 +125,7 @@ if [ "$IS_SERVER" == "y" ]; then
         TUNNEL_NAME="${TUNNEL_NAME:-$DEFAULT_NAME}"
         echo "Creating tunnel with name: $TUNNEL_NAME"
         cloudflared tunnel create "$TUNNEL_NAME" 
-        TUNNEL_UUID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+        TUNNEL_UUID="$(cloudflared tunnel list | awk -v name="$TUNNEL_NAME" '$2 == name {print $1}' | head -n 1)"
         if [ -z "$TUNNEL_UUID" ]; then
         echo "Tunnel UUID not found: $TUNNEL_NAME"
         exit 1
@@ -170,8 +170,6 @@ if [ "$IS_SERVER" == "y" ]; then
             printf '%s' "$SSH_INFO" | xsel --clipboard --input
             echo "📋 Copied to clipboard (X11, xsel)."
         fi
-        pause
-        exit 0
     else
         echo "System not supported with this script (just Debian/Ubuntu)"
         exit 1
@@ -194,13 +192,34 @@ else
     # --- Generate key pair if missing ---
     if [ -f "$KEY_PATH" ]; then
         echo "⚠️  Key already exists at $KEY_PATH."
-        exit 0
+        read -p "Do you want to copy it to a server? (y/n): " COPY_EXISTING
+        if [ "$COPY_EXISTING" == "y" ]; then
+            echo "Example: admin@192.168.0.100 -p 22"
+            read -p "Remote user: " SSH_USER
+            read -p "Remote IP: " SSH_HOST
+            read -p "Remote SSH port: " SSH_PORT
+            SSH_PORT="${SSH_PORT:-22}"
+
+            if [ -z "$SSH_USER" ] || [ -z "$SSH_HOST" ]; then
+                echo "❌ User and host cannot be empty."
+                exit 1
+            fi
+            if ssh-copy-id -i "${KEY_PATH}.pub" -p "$SSH_PORT" "$SSH_USER@$SSH_HOST"; then
+                echo "✅ Public key copied to server."
+            else
+                echo "❌ Failed to copy public key."
+                exit 1
+            fi
+        else
+            echo "Nothing was changed."
+            exit 0
+        fi
+        
     else
-        read "Do you want to generate a new key pair? (is it safer than using only a password) (y/n): " GENERATE_KEY
-        if [ "$GENERATE_KEY" != "y" ]; then
+        read -p "Do you want to generate a new key pair? (is it safer than using only a password) (y/n): " GENERATE_KEY
+        if [ "$GENERATE_KEY" == "y" ]; then
             echo "Generating RSA key pair..."
-            read -r -s -p "Enter a password for the key (it can be nothing): " PASSPHRASE
-            ssh-keygen -t rsa -b 4096 -f "$KEY_PATH" -N "$PASSPHRASE"
+            ssh-keygen -t rsa -b 4096 -f "$KEY_PATH"
             echo "✅ Key generated at $KEY_PATH"
 
             # --- Set correct permissions on client side ---
